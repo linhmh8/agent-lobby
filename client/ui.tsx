@@ -159,6 +159,7 @@ export function IconButton({
   onPress,
   size = 28,
   color,
+  disabled = false,
 }: {
   theme: PluginTheme;
   icon: string;
@@ -166,11 +167,14 @@ export function IconButton({
   onPress: () => void;
   size?: number;
   color?: string;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       hitSlop={6}
       style={pressStyle(({ pressed, hovered }) => ({
@@ -179,7 +183,8 @@ export function IconButton({
         borderRadius: radius.sm,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: hovered || pressed ? theme.colors.surface2 : "transparent",
+        opacity: disabled ? 0.35 : 1,
+        backgroundColor: !disabled && (hovered || pressed) ? theme.colors.surface2 : "transparent",
       }))}
     >
       <Icon name={icon} size={16} color={color ?? theme.colors.foregroundMuted} />

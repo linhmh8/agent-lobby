@@ -4,6 +4,8 @@ import type { PaseoAgent } from "./paseo-types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PixelRatio, Pressable, Text, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from "react-native";
 import { AgentDialogs, Detail, useAgentActions } from "./detail";
+import { DockHandle } from "./dock-handle";
+import { SIDE_DOCK_MIN_WIDTH, bottomDockHeight, readSize, sideDockWidth } from "./dock-model";
 import { candidatesOf } from "./feed-plan";
 import { CrewList } from "./list";
 import {
@@ -37,7 +39,7 @@ import {
   type Office,
   type Presence,
 } from "./office-model";
-import { highlighted as highlightedBy, indexNodes, sceneScale, zoomScale } from "./scene-model";
+import { highlighted as highlightedBy, indexNodes, officeScale, zoomStep } from "./scene-model";
 import {
   Chip,
   Empty,
@@ -54,14 +56,11 @@ import {
 import { useDirectory, useShown, useWake } from "./use-directory";
 import { useFeed } from "./use-feed";
 import { nextWake, paneShown } from "./wake";
+import { recall, remember } from "./web";
 
 type Filter = CrewState | "all";
 type Mode = "office" | "list";
 
-/** Below this width the detail docks under the office instead of beside it. */
-const SIDE_DOCK_MIN_WIDTH = 720;
-const SIDE_DOCK_WIDTH = 320;
-const SIDE_DOCK_MAX_WIDTH = 420;
 const NOBODY: ReadonlySet<string> = new Set();
 
 export interface CrewViewProps extends PluginSurfaceProps {
@@ -74,7 +73,22 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
   const [allWorkspaces, setAllWorkspaces] = useState(false);
   const scope = inPanel && !allWorkspaces ? homeScope : null;
   const paseo = usePaseo();
-  const [size, setSize] = useState({ view: 0, height: 0, scene: 0 });
+  const [size, setSize] = useState({ view: 0, height: 0, scene: 0, column: 0 });
+  // Sizes picked by hand are kept on this device: the office's zoom for a panel and for the surface
+  // apart, since one is narrow and the other wide, and the dock's width beside it and height under it.
+  const zoomKey = inPanel ? "zoom.panel" : "zoom.surface";
+  const [zoom, setZoomState] = useState(() => readSize(recall(zoomKey)));
+  const setZoom = useCallback(
+    (next: number | null) => {
+      setZoomState(next);
+      remember(zoomKey, next === null ? null : String(next));
+    },
+    [zoomKey],
+  );
+  const [dockWanted, setDockWanted] = useState(() => ({
+    side: readSize(recall("dock.width")),
+    bottom: readSize(recall("dock.height")),
+  }));
   // The host keeps a pane mounted behind another tab; then nothing here runs.
   const shown = useShown(paneShown(size.view, size.height));
   const directory = useDirectory(paseo, shown);
@@ -112,8 +126,13 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
   );
 
   const office = mode === "office";
-  // Small in a side pane; a wider pane draws it larger, as far as the office still fits across.
-  const baseScale = useMemo(() => sceneScale(size.scene, PixelRatio.get()), [size.scene]);
+  // Small in a side pane, larger in a wide one, or the size picked by hand. Only a change of size or of
+  // tiles across lays the office out again, not every pixel a dock is dragged by.
+  const pixelRatio = PixelRatio.get();
+  const fitted = officeScale(size.view, size.scene, pixelRatio, zoom);
+  const scale = useMemo(() => fitted, [fitted.scale, fitted.widthTiles]);
+  const zoomOut = zoomStep(scale.scale, -1, size.scene, pixelRatio);
+  const zoomIn = zoomStep(scale.scale, 1, size.scene, pixelRatio);
   const nodes = useMemo(() => indexNodes(roots), [roots]);
   // A closed agent has no desk, but it keeps the one it had until it has walked out of the door.
   const [left, setLeft] = useState<ReadonlySet<string>>(NOBODY);
@@ -142,15 +161,11 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
   const folded = everyGroup.length - groups.length;
   // Laid out whole each time; what came out as before is the object from before, and is not drawn again.
   const lastPlan = useRef<Office | null>(null);
-  const { plan, scale } = useMemo(() => {
-    const options = { agents: directory.agents, holding };
-    const natural = layoutOffice(groups, { ...options, width: baseScale.widthTiles });
-    const zoomed = zoomScale(baseScale, natural.building?.depth.length ?? 0, size.scene, PixelRatio.get());
-    const laid = zoomed === baseScale ? natural : layoutOffice(groups, { ...options, width: zoomed.widthTiles });
-    const next = shareOffice(lastPlan.current, laid);
+  const plan = useMemo(() => {
+    const next = shareOffice(lastPlan.current, layoutOffice(groups, { width: scale.widthTiles, agents: directory.agents, holding }));
     lastPlan.current = next;
-    return { plan: next, scale: zoomed };
-  }, [groups, baseScale, size.scene, directory.agents, holding]);
+    return next;
+  }, [groups, scale.widthTiles, directory.agents, holding]);
   useEffect(() => {
     seatedBefore.current = office ? new Set(plan.desks.keys()) : NOBODY;
   }, [plan, office]);
@@ -255,8 +270,29 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
       : undefined;
   }, [selected, nodes, office, plan.visitors, directory.agents]);
   const sideDock = size.view >= SIDE_DOCK_MIN_WIDTH;
-  // A chat reads better wider; the office keeps at least as much as the dock takes.
-  const dockWidth = Math.round(Math.min(SIDE_DOCK_MAX_WIDTH, Math.max(SIDE_DOCK_WIDTH, size.view * 0.4)));
+  // A chat reads better wider; until it is dragged the office keeps at least as much as the dock takes.
+  const dockWidth = sideDockWidth(size.view, dockWanted.side);
+  const dockHeight = bottomDockHeight(size.column, dockWanted.bottom);
+  // The dock as laid out: a list of closed agents under the office may be shorter than its height.
+  const [dockShown, setDockShown] = useState(0);
+  const onDockLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setDockShown(Math.round(sideDock ? width : height));
+  };
+  const resizeDock = useCallback(
+    (next: number) =>
+      setDockWanted((current) =>
+        sideDock
+          ? { ...current, side: sideDockWidth(size.view, next) }
+          : { ...current, bottom: bottomDockHeight(size.column, next) },
+      ),
+    [sideDock, size.view, size.column],
+  );
+  // Kept once the drag ends, as the size it came to rest at.
+  const keepDock = useCallback(
+    (next: number) => remember(sideDock ? "dock.width" : "dock.height", String(sideDock ? sideDockWidth(size.view, next) : bottomDockHeight(size.column, next))),
+    [sideDock, size.view, size.column],
+  );
   // A workspace pane fills its dock; the global list is reading-width, like Paseo's list pages.
   const column = !inPanel ? { width: "100%" as const, maxWidth: 720, alignSelf: "center" as const } : null;
   const onViewLayout = (event: LayoutChangeEvent) => {
@@ -278,6 +314,10 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
   const onSceneLayout = (event: LayoutChangeEvent) => {
     const width = Math.round(event.nativeEvent.layout.width);
     setSize((current) => (current.scene === width ? current : { ...current, scene: width }));
+  };
+  const onColumnLayout = (event: LayoutChangeEvent) => {
+    const height = Math.round(event.nativeEvent.layout.height);
+    setSize((current) => (current.column === height ? current : { ...current, column: height }));
   };
 
   // The header is the same from one agent's update to the next unless a count moved: it is not drawn again for each.
@@ -304,22 +344,47 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
             <Chip theme={theme} label="List" selected={!office} onPress={() => setMode("list")} />
             <IconButton theme={theme} icon="RefreshCw" label="Refresh" onPress={directory.reload} />
           </View>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Find an agent"
-            placeholderTextColor={colors.foregroundMuted}
-            autoCorrect={false}
-            style={{
-              height: 32,
-              paddingHorizontal: space.md,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: colors.border,
-              color: colors.foreground,
-              fontSize: font.base,
-            }}
-          />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Find an agent"
+              placeholderTextColor={colors.foregroundMuted}
+              autoCorrect={false}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 32,
+                paddingHorizontal: space.md,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: colors.border,
+                color: colors.foreground,
+                fontSize: font.base,
+              }}
+            />
+            {office ? (
+              <>
+                {zoom !== null ? <Chip theme={theme} label="Auto" selected={false} onPress={() => setZoom(null)} /> : null}
+                <IconButton
+                  theme={theme}
+                  icon="ZoomOut"
+                  label="Draw the office smaller"
+                  size={32}
+                  disabled={zoomOut === null}
+                  onPress={() => zoomOut !== null && setZoom(zoomOut)}
+                />
+                <IconButton
+                  theme={theme}
+                  icon="ZoomIn"
+                  label="Draw the office larger"
+                  size={32}
+                  disabled={zoomIn === null}
+                  onPress={() => zoomIn !== null && setZoom(zoomIn)}
+                />
+              </>
+            ) : null}
+          </View>
           {inPanel ? (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.xs }}>
               <Chip theme={theme} label="This workspace" selected={!allWorkspaces} onPress={() => setAllWorkspaces(false)} />
@@ -357,7 +422,7 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
         </View>
     ),
     // `counts` and `chips` are read through `countsKey`, `column` through `inPanel`.
-    [theme, office, inPanel, allWorkspaces, directory.phase, directory.truncated, directory.error, directory.reload, countsKey, query, filter, folded, noMatches],
+    [theme, office, inPanel, allWorkspaces, directory.phase, directory.truncated, directory.error, directory.reload, countsKey, query, filter, folded, noMatches, zoom, zoomIn, zoomOut, setZoom],
   );
 
   return (
@@ -367,7 +432,7 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
       {header}
 
       {office ? (
-        <View style={{ flex: 1, flexDirection: sideDock ? "row" : "column", paddingTop: space.sm }}>
+        <View style={{ flex: 1, flexDirection: sideDock ? "row" : "column", paddingTop: space.sm }} onLayout={onColumnLayout}>
           <View style={{ flex: 1, minWidth: 0, minHeight: 0 }} onLayout={onSceneLayout}>
             {roots.length === 0 ? (
               emptyLabel ? (
@@ -401,8 +466,9 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
             <View
               style={[
                 { backgroundColor: colors.surface1, borderColor: colors.border },
-                sideDock ? { width: dockWidth, borderLeftWidth: 1 } : { height: "40%", borderTopWidth: 1 },
+                sideDock ? { width: dockWidth, borderLeftWidth: 1 } : { height: dockHeight, borderTopWidth: 1 },
               ]}
+              onLayout={onDockLayout}
             >
               {detailFor(selectedNode, {
                 dock: true,
@@ -414,8 +480,9 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
             <View
               style={[
                 { backgroundColor: colors.surface1, borderColor: colors.border },
-                sideDock ? { width: dockWidth, borderLeftWidth: 1 } : { maxHeight: "40%", borderTopWidth: 1 },
+                sideDock ? { width: dockWidth, borderLeftWidth: 1 } : { maxHeight: dockHeight, borderTopWidth: 1 },
               ]}
+              onLayout={onDockLayout}
             >
               <ScrollView contentContainerStyle={{ padding: space.md, gap: space.xs }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
@@ -457,6 +524,9 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
                 ))}
               </ScrollView>
             </View>
+          ) : null}
+          {(selectedNode || closedList) && dockShown > 0 ? (
+            <DockHandle theme={theme} side={sideDock} size={dockShown} onResize={resizeDock} onRest={keepDock} />
           ) : null}
         </View>
       ) : (

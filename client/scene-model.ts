@@ -2,6 +2,7 @@ import type { PaseoAgent } from "./paseo-types";
 import type { Exchange } from "./exchanges";
 import { STATE_LABEL, displayTitle, matches, roleOf, type CrewNode, type CrewState } from "./model";
 import type { Act, Office, Point, Presence } from "./office-model";
+import { crispScale } from "./pixel/scale";
 
 /**
  * Everything the scene decides that is not drawing: how big a tile is, how a
@@ -49,21 +50,71 @@ export function sceneScale(widthPx: number, pixelRatio = 2): SceneScale {
   return { scale, tile, widthTiles: Math.floor(width / tile) };
 }
 
-/** The largest size the office grows to when a wide pane leaves room to spare. */
+/** The largest size the office grows to on its own, in a wide pane. */
 export const MAX_SCENE_SCALE = 2;
+/** From this pane width up the office is drawn larger, in step with the pane. Narrower panes keep the side-pane size. */
+export const GROW_FROM_WIDTH = 720;
+/** The largest size the office can be zoomed to by hand. */
+export const MAX_ZOOM = 3;
+
+const EPS = 1e-6;
+/** The smallest size there is: one device pixel per art pixel, and never under one layout pixel. */
+const leastScale = (pixelRatio: number) => Math.ceil(pixelRatio - EPS) / pixelRatio;
+const crispDown = (target: number, pixelRatio: number) => Math.floor(target * pixelRatio + EPS) / pixelRatio;
+const sized = (scale: number, widthPx: number): SceneScale => {
+  const tile = TILE * scale;
+  return { scale, tile, widthTiles: Math.floor(Math.max(0, Math.floor(widthPx)) / tile) };
+};
 
 /**
- * The size an office `usedTiles` wide is drawn at in a pane `widthPx` wide:
- * the largest crisp size, up to `MAX_SCENE_SCALE`, at which it still fits
- * across, and never under `base`. The office is laid out again at that size.
+ * The largest size at which a scene `sceneWidth` wide still holds a room of
+ * `SCENE_MIN_TILES` across, so that nothing scrolls sideways; never under the
+ * smallest size there is.
  */
-export function zoomScale(base: SceneScale, usedTiles: number, widthPx: number, pixelRatio = 2): SceneScale {
-  const width = Math.max(0, Math.floor(widthPx));
-  if (usedTiles <= 0) return base;
-  const fit = Math.floor((Math.min(MAX_SCENE_SCALE, width / (TILE * usedTiles)) * pixelRatio) + 1e-6) / pixelRatio;
-  if (fit <= base.scale) return base;
-  const tile = TILE * fit;
-  return { scale: fit, tile, widthTiles: Math.floor(width / tile) };
+export function fitScale(sceneWidth: number, pixelRatio = 2): number {
+  return Math.max(leastScale(pixelRatio), crispDown(Math.max(0, Math.floor(sceneWidth)) / (TILE * SCENE_MIN_TILES), pixelRatio));
+}
+
+/**
+ * The size the office is drawn at when nobody has zoomed it. It depends on
+ * the pane alone, never on the office in it, so the office keeps its size as
+ * rooms come and go. A pane narrower than `GROW_FROM_WIDTH` draws it at the
+ * side-pane size, `sceneScale`; a wider one larger in step with its width, up
+ * to `MAX_SCENE_SCALE`, at the crisp size at or below that.
+ */
+export function autoScale(paneWidth: number, pixelRatio = 2): number {
+  const side = sceneScale(Number.MAX_SAFE_INTEGER, pixelRatio).scale;
+  const width = Math.max(0, Math.floor(paneWidth));
+  if (width < GROW_FROM_WIDTH) return side;
+  return Math.max(side, crispDown(Math.min(MAX_SCENE_SCALE, (SCENE_SCALE * width) / GROW_FROM_WIDTH), pixelRatio));
+}
+
+/**
+ * The size the office is drawn at in a pane `paneWidth` wide whose scene is
+ * `sceneWidth` wide (less when the details are docked beside it). `zoom` is
+ * the size picked by hand, or null for `autoScale`; either way it is moved to
+ * a crisp size and brought down to what the scene holds across.
+ */
+export function officeScale(paneWidth: number, sceneWidth: number, pixelRatio = 2, zoom: number | null = null): SceneScale {
+  if (zoom === null) {
+    // A side pane keeps exactly what it always had, the smallest size included.
+    if (Math.floor(paneWidth) < GROW_FROM_WIDTH) return sceneScale(sceneWidth, pixelRatio);
+    return sized(Math.min(autoScale(paneWidth, pixelRatio), fitScale(sceneWidth, pixelRatio)), sceneWidth);
+  }
+  const picked = Math.min(crispDown(MAX_ZOOM, pixelRatio), Math.max(leastScale(pixelRatio), crispScale(zoom, pixelRatio, "nearest")));
+  return sized(Math.min(picked, fitScale(sceneWidth, pixelRatio)), sceneWidth);
+}
+
+/**
+ * One step of zooming by hand from `current`: a device pixel more or less per
+ * art pixel. Null when there is no step that way: at the smallest size, at
+ * `MAX_ZOOM`, or past what the scene holds across.
+ */
+export function zoomStep(current: number, direction: 1 | -1, sceneWidth: number, pixelRatio = 2): number | null {
+  const next = (Math.round(current * pixelRatio) + direction) / pixelRatio;
+  const most = Math.min(crispDown(MAX_ZOOM, pixelRatio) + EPS, fitScale(sceneWidth, pixelRatio) + EPS);
+  if (next < leastScale(pixelRatio) - EPS || next > most) return null;
+  return next;
 }
 
 /** Padding that brings a `size` px target up to the 44 px minimum. */

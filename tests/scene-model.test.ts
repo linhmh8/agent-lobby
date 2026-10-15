@@ -21,8 +21,14 @@ import {
   spotOf,
   spriteRole,
   touchSlop,
-  zoomScale,
+  autoScale,
+  fitScale,
+  officeScale,
+  zoomStep,
+  GROW_FROM_WIDTH,
   MAX_SCENE_SCALE,
+  MAX_ZOOM,
+  SCENE_MIN_TILES,
   MAX_WALK_MS,
   WALK_MS_PER_TILE,
   moveKind,
@@ -86,32 +92,110 @@ describe("sceneScale", () => {
   });
 });
 
-describe("zoomScale", () => {
-  it("draws an office larger as far as it still fits across, up to MAX_SCENE_SCALE", () => {
-    // Two rooms 21 tiles across in a 1700 px tab on a 2× screen: as large as allowed.
-    const wide = zoomScale(sceneScale(1700, 2), 21, 1700, 2);
-    expect(wide).toEqual({ scale: MAX_SCENE_SCALE, tile: 16 * MAX_SCENE_SCALE, widthTiles: 53 });
-    // 60 tiles in the same tab: 1700 / 960 = 1.77, so 1.5, the crisp size below.
-    expect(zoomScale(sceneScale(1700, 2), 60, 1700, 2)).toEqual({ scale: 1.5, tile: 24, widthTiles: 70 });
-    // Already filling the pane, or nothing in it: as it was.
-    const side = sceneScale(320, 2);
-    expect(zoomScale(side, 20, 320, 2)).toBe(side);
-    expect(zoomScale(side, 0, 320, 2)).toBe(side);
+describe("autoScale", () => {
+  const crisp = (scale: number, ratio: number) => Math.abs(scale * ratio - Math.round(scale * ratio)) < 1e-9;
+
+  it("keeps the side-pane size in a narrow pane and grows with a wide one, up to MAX_SCENE_SCALE", () => {
+    // An Explorer pane: what it always had, 1.2 on a 1.67× screen, 1 on a 2× one.
+    expect(autoScale(313, 5 / 3)).toBeCloseTo(1.2);
+    expect(autoScale(320, 2)).toBe(1);
+    expect(autoScale(GROW_FROM_WIDTH - 1, 2)).toBe(1);
+    // Wider: in step with the pane, at the crisp size at or below it.
+    expect(autoScale(900, 2)).toBe(1.5);
+    expect(autoScale(1200, 2)).toBe(2);
+    expect(autoScale(1700, 2)).toBe(MAX_SCENE_SCALE);
+    expect(autoScale(1080, 5 / 3)).toBeCloseTo(1.8);
+    expect(autoScale(1440, 1)).toBe(2);
   });
 
-  it("keeps one art pixel a whole number of device pixels and the office inside the pane", () => {
+  it("never shrinks as the pane widens, and is always crisp", () => {
+    for (const ratio of [1, 1.25, 1.5, 5 / 3, 2, 2.625, 3]) {
+      let before = 0;
+      for (let width = 0; width <= 2400; width += 7) {
+        const scale = autoScale(width, ratio);
+        expect(crisp(scale, ratio)).toBe(true);
+        expect(scale).toBeGreaterThanOrEqual(before);
+        expect(scale).toBeLessThanOrEqual(Math.max(MAX_SCENE_SCALE, sceneScale(width, ratio).scale) + 1e-9);
+        before = scale;
+      }
+    }
+  });
+});
+
+describe("officeScale", () => {
+  it("is sceneScale in a side pane, whatever the office", () => {
+    for (const [width, ratio] of [[313, 5 / 3], [320, 2], [150, 3], [0, 2]] as const) {
+      expect(officeScale(width, width, ratio)).toEqual(sceneScale(width, ratio));
+    }
+  });
+
+  it("depends on the pane, so a dock dragged beside the office changes tiles across, not the size", () => {
+    // A 1400 px pane on a 2× screen: 2 whatever the dock leaves, as long as a room still fits across.
+    const sizes = new Set<number>();
+    for (let scene = 1080; scene >= 400; scene -= 1) sizes.add(officeScale(1400, scene, 2).scale);
+    expect([...sizes]).toEqual([2]);
+    // Too narrow to hold a room at 2: the largest size that does.
+    expect(officeScale(1400, 260, 2).scale).toBe(1.5);
+    expect(officeScale(1400, 260, 2).widthTiles).toBeGreaterThanOrEqual(SCENE_MIN_TILES);
+  });
+
+  it("draws a wide pane larger than the side-pane size it had before it grew", () => {
+    for (const ratio of [1, 5 / 3, 2]) {
+      expect(officeScale(1400, 1400, ratio).scale).toBeGreaterThan(sceneScale(1400, ratio).scale);
+    }
+  });
+
+  it("takes a size picked by hand over the automatic one, crisp and within what fits", () => {
+    expect(officeScale(1400, 1400, 2, 2.5)).toEqual({ scale: 2.5, tile: 40, widthTiles: 35 });
+    // In an Explorer pane the same pick is brought down to what holds a room across.
+    expect(officeScale(313, 313, 2, 2.5).scale).toBe(2);
+    expect(officeScale(313, 313, 2, 0.4).scale).toBe(1);
+    expect(officeScale(1400, 1400, 2, 99).scale).toBe(MAX_ZOOM);
+    // A size kept from a 2× screen, read on a 1.67× one: the crisp size nearest it.
+    expect(officeScale(1400, 1400, 5 / 3, 1.5).scale).toBeCloseTo(1.8);
     for (const ratio of [1, 1.25, 1.5, 5 / 3, 2, 3]) {
-      for (const width of [320, 900, 1700]) {
-        for (const used of [9, 21, 40]) {
-          const base = sceneScale(width, ratio);
-          const { scale, widthTiles } = zoomScale(base, used, width, ratio);
+      for (const zoom of [null, 0.5, 1, 1.37, 2, 2.5, 3, 7]) {
+        for (const [pane, scene] of [[313, 313], [900, 560], [1400, 1000], [2400, 2400]]) {
+          const { scale, widthTiles, tile } = officeScale(pane!, scene!, ratio, zoom);
           expect(Math.abs(scale * ratio - Math.round(scale * ratio))).toBeLessThan(1e-9);
-          expect(scale).toBeGreaterThanOrEqual(base.scale);
-          expect(scale).toBeLessThanOrEqual(MAX_SCENE_SCALE + 1e-9);
-          if (scale > base.scale) expect(widthTiles).toBeGreaterThanOrEqual(used);
+          expect(scale).toBeLessThanOrEqual(MAX_ZOOM + 1e-9);
+          expect(tile).toBe(16 * scale);
+          if (scale > fitScale(0, ratio)) expect(widthTiles).toBeGreaterThanOrEqual(SCENE_MIN_TILES);
         }
       }
     }
+  });
+});
+
+describe("dragging a dock beside the office", () => {
+  it("lays the office out again only when the tiles across change, at most once a tile", () => {
+    for (const ratio of [1, 5 / 3, 2]) {
+      for (const zoom of [null, 1.5]) {
+        const layouts: string[] = [];
+        // A 1400 px pane, its dock dragged a pixel at a time from 260 to 1080 px wide.
+        for (let dock = 260; dock <= 1080; dock += 1) {
+          const { scale, widthTiles } = officeScale(1400, 1400 - dock, ratio, zoom);
+          const key = `${scale}:${widthTiles}`;
+          if (layouts.at(-1) !== key) layouts.push(key);
+        }
+        const tile = 16 * officeScale(1400, 1400, ratio, zoom).scale;
+        expect(layouts.length).toBeLessThanOrEqual(Math.ceil(820 / 16) + 1);
+        expect(layouts.length).toBeLessThanOrEqual(Math.ceil(820 / tile) + 3);
+      }
+    }
+  });
+});
+
+describe("zoomStep", () => {
+  it("moves a device pixel per art pixel at a time, and stops at either end", () => {
+    expect(zoomStep(1, 1, 1400, 2)).toBe(1.5);
+    expect(zoomStep(1.5, -1, 1400, 2)).toBe(1);
+    expect(zoomStep(1, -1, 1400, 2)).toBeNull();
+    expect(zoomStep(MAX_ZOOM, 1, 2400, 2)).toBeNull();
+    expect(zoomStep(1.2, 1, 1400, 5 / 3)).toBeCloseTo(1.8);
+    // In an Explorer pane, no larger than a room still fits across.
+    expect(zoomStep(2, 1, 313, 2)).toBeNull();
+    expect(zoomStep(1.5, 1, 313, 2)).toBe(2);
   });
 });
 
