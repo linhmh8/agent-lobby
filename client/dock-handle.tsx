@@ -4,8 +4,11 @@ import { PanResponder, View, type AccessibilityActionEvent, type ViewStyle } fro
 import { MIN_TOUCH } from "./scene-model";
 import { ON_WEB, resizeCursor } from "./web";
 
-/** A finger needs the whole minimum; a mouse a strip that covers little of either side. */
-const REACH = ON_WEB ? 16 : MIN_TOUCH;
+/**
+ * A finger needs the whole minimum. A mouse needs 24, the WCAG 2.2 minimum target, which on the
+ * dock's side stays inside its padding and on the office's covers half a tile at most.
+ */
+const REACH = ON_WEB ? 24 : MIN_TOUCH;
 /** What a screen reader's swipe moves the dock by. */
 const STEP = 40;
 
