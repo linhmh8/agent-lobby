@@ -43,7 +43,9 @@ export function DockHandle({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
+      onPanResponderGrant: (event) => {
+        // On the web a drag would otherwise select the text it passes over.
+        event.preventDefault();
         drag.current = { from: latest.current.size, to: latest.current.size };
         setDragging(true);
       },
