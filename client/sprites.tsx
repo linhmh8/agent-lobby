@@ -4,7 +4,8 @@ import { View } from "react-native";
 import type { CrewState } from "./model";
 import { Strip } from "./motion";
 import { loopOf, type Cycle } from "./motion-model";
-import type { Emote, Room } from "./office-model";
+import { frameArt, frameKey, roomArt, roomKey } from "./backdrop";
+import type { Emote, Rect, Room } from "./office-model";
 import {
   BUBBLE_MAX_WIDTH,
   archiveLevel,
@@ -14,29 +15,21 @@ import {
   anchored,
   deviceCrispScale,
   deviceSnap,
-  door,
-  wallTopAt,
   bubble,
   characterAnimation,
   deskAnimation,
   emoteAnimation,
   stateIcon,
-  composite,
   emote,
   lookFor,
   officePalette,
   prop,
-  tile as tileBitmap,
-  PROPS,
   TILE as ART_TILE,
   CHARACTER_FRAMES,
   type Animation,
   type CharacterPose as ArtPose,
   type EmoteId,
-  type Bitmap,
   type Facing,
-  type Layer,
-  type TileId,
 } from "./pixel";
 import { CHARACTER_HEIGHT, type Heading, type SpriteRole } from "./scene-model";
 
@@ -393,111 +386,29 @@ export const ArchiveSprite = memo(function ArchiveSprite({
   );
 });
 
-/** What a room's drawing depends on: its shape and furniture, not where it stands. */
-function roomKey(room: Room): string {
-  const zones = room.zones
-    .map((zone) => `${zone.kind}@${zone.x - room.x},${zone.y - room.y},${zone.width}x${zone.height}:${zone.props.map((item) => `${item.id}@${item.x - room.x},${item.y - room.y}`).join(",")}`)
-    .join(";");
-  const wall = room.lounge.wall ? `${room.lounge.wall.x - room.x},${room.lounge.wall.y - room.y}+${room.lounge.wall.width}` : "";
-  const pods = room.pods
-    .filter(isCrew)
-    .map((pod) => pod.teams.map((team) => `${team.area.x - room.x},${team.area.y - room.y},${team.area.width}x${team.area.height}`).join("+"))
-    .join("/");
-  return `room2:${room.width}x${room.height}:f${room.floorTop - room.y}:d${room.door.x - room.x}:w${wall}:${zones}:p${pods}`;
-}
-
-const inRect = (x: number, y: number, rect: { x: number; y: number; width: number; height: number }) =>
-  x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
-
-/** A crew, as against an agent on its own: more than one desk. */
-const isCrew = (pod: Room["pods"][number]) => pod.teams.reduce((sum, team) => sum + team.desks.length, 0) > 1;
-
-const POD_FLOORS: readonly TileId[] = ["pod0", "pod1", "pod2", "pod3"];
-
-function roomBitmap(room: Room, key: string): Bitmap {
-  const layers: Layer[] = [];
-  const isWall = (x: number, y: number) =>
-    inRect(x, y, room) && (x === room.x || x === room.x + room.width - 1 || y === room.y || y === room.y + room.height - 1);
-  // Each team of a crew (a lead's people) has a floor of its own; an agent on its own sits on the plain floor.
-  const teams = room.pods.filter(isCrew).flatMap((pod) => pod.teams);
-  const floorAt = (x: number, y: number): TileId => {
-    if (y < room.floorTop) return "wall";
-    // The half wall the appliances, the shelves and the sofa stand against.
-    if (room.lounge.wall && inRect(x, y, room.lounge.wall)) return "wall";
-    const zone = room.zones.find((entry) => inRect(x, y, entry));
-    if (zone) return zone.kind === "pantry" ? "kitchen" : "carpet";
-    const team = teams.findIndex((entry) => inRect(x, y, entry.area));
-    if (team >= 0) return POD_FLOORS[team % POD_FLOORS.length] as TileId;
-    if (x === room.door.x && y === room.floorTop) return "doormat";
-    return "floor";
-  };
-  for (let y = room.y; y < room.y + room.height; y += 1) {
-    for (let x = room.x; x < room.x + room.width; x += 1) {
-      const bitmap = isWall(x, y) ? wallTopAt(isWall, x, y) : tileBitmap(floorAt(x, y));
-      layers.push({ bitmap, x: (x - room.x) * ART_TILE, y: (y - room.y) * ART_TILE });
-    }
-  }
-  // The door stands in the wall's face, at the head of the corridor.
-  layers.push({ bitmap: door(room.floorTop - room.y - 1), x: (room.door.x - room.x) * ART_TILE, y: ART_TILE });
-  const furniture = room.zones.flatMap((zone) => zone.props);
-  // A rug lies flat: straight after the floor, under everything else.
-  for (const item of [...furniture.filter((entry) => entry.id === "rug"), ...furniture.filter((entry) => entry.id !== "rug")]) {
-    // Furniture stands on the bottom centre of the tiles it covers.
-    layers.push({
-      bitmap: prop(item.id),
-      x: (item.x - room.x) * ART_TILE + (PROPS[item.id].tilesWide * ART_TILE) / 2,
-      y: (item.y - room.y + 1) * ART_TILE,
-    });
-  }
-  // `composite` is the one cache of room drawings, bounded by the renderer.
-  return composite(key, room.width * ART_TILE, room.height * ART_TILE, layers);
-}
-
 /**
- * The building the rooms stand in, as one image drawn under them: hallway
- * floor wherever it reaches, and an outer wall along its stepped outline.
+ * The walls of the whole floor plan and the hallway between its rooms, as one
+ * image drawn over the rooms: a wall two rooms share is drawn once.
  * `depth[x]` is how far down column x goes.
  */
-export const BuildingBackdrop = memo(function BuildingBackdrop({
+export const FrameBackdrop = memo(function FrameBackdrop({
   theme,
   tile,
+  rooms,
   depth,
-}: SpriteProps & { depth: readonly number[] }) {
-  const key = depth.join(".");
-  const bitmap = useMemo(() => {
-    const inside = (x: number, y: number) => x >= 0 && x < depth.length && y >= 0 && y < (depth[x] as number);
-    // The outline: every tile of the building that touches the outside, corners included.
-    const isWall = (x: number, y: number) =>
-      inside(x, y) &&
-      !(
-        inside(x - 1, y) &&
-        inside(x + 1, y) &&
-        inside(x, y - 1) &&
-        inside(x, y + 1) &&
-        inside(x - 1, y - 1) &&
-        inside(x + 1, y - 1) &&
-        inside(x - 1, y + 1) &&
-        inside(x + 1, y + 1)
-      );
-    const height = Math.max(0, ...depth);
-    const layers: Layer[] = [];
-    for (let x = 0; x < depth.length; x += 1) {
-      for (let y = 0; y < (depth[x] as number); y += 1) {
-        layers.push({ bitmap: isWall(x, y) ? wallTopAt(isWall, x, y) : tileBitmap("floorAlt"), x: x * ART_TILE, y: y * ART_TILE });
-      }
-    }
-    return composite(`building:${key}`, depth.length * ART_TILE, height * ART_TILE, layers);
-    // `depth` is read through `key`.
-  }, [key]);
+}: SpriteProps & { rooms: readonly Rect[]; depth: readonly number[] }) {
+  // The layout is rebuilt on every directory update; the frame only when a room moves or changes shape.
+  const key = frameKey(rooms, depth);
+  const bitmap = useMemo(() => frameArt(rooms, depth), [key]);
   return (
     <Sprite sprite={bitmap} palette={officePalette(theme)} scale={artScale(tile)} style={{ position: "absolute", left: 0, top: 0 }} />
   );
 });
 
 export const RoomBackdrop = memo(function RoomBackdrop({ theme, tile, room }: SpriteProps & { room: Room }) {
-  // The layout is rebuilt on every directory update; the layers only when the room changes shape.
+  // The layout is rebuilt on every directory update; the floor only when the room changes shape.
   const key = roomKey(room);
-  const bitmap = useMemo(() => roomBitmap(room, key), [key]);
+  const bitmap = useMemo(() => roomArt(room), [key]);
   return (
     <Sprite
       sprite={bitmap}

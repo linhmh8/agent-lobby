@@ -98,13 +98,20 @@ const composites = new Lru<Bitmap>(COMPOSITE_MAX_ENTRIES, COMPOSITE_MAX_PIXELS, 
  * dropped from the cache is simply drawn again on the next call.
  */
 export function composite(key: string, width: number, height: number, layers: readonly Layer[]): Bitmap {
+  return drawn(key, width, height, (out) => {
+    for (const layer of layers) {
+      blit(out, layer.bitmap, layer.x - layer.bitmap.anchor.x, layer.y - layer.bitmap.anchor.y);
+    }
+  });
+}
+
+/** `composite` for a drawing made pixel by pixel: `draw` paints onto a clear canvas, once per key while cached. */
+export function drawn(key: string, width: number, height: number, draw: (out: Canvas) => void): Bitmap {
   const cacheKey = `x:${width}x${height}:${key}`;
   let bitmap = composites.get(cacheKey);
   if (!bitmap) {
     const out = canvas(width, height);
-    for (const layer of layers) {
-      blit(out, layer.bitmap, layer.x - layer.bitmap.anchor.x, layer.y - layer.bitmap.anchor.y);
-    }
+    draw(out);
     bitmap = { key: cacheKey, anchor: { x: 0, y: 0 }, ...out };
     composites.set(cacheKey, bitmap);
   }

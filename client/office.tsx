@@ -42,7 +42,7 @@ import {
 import {
   ArchiveSprite,
   BubbleSprite,
-  BuildingBackdrop,
+  FrameBackdrop,
   ChairSprite,
   CharacterSprite,
   DeskSprite,
@@ -935,12 +935,12 @@ export function OfficeScene({
         {/* A pane is rarely a whole number of tiles wide: the office sits in the middle of what is left
             over, on a device pixel so that nothing in it softens. */}
         <View style={{ width, height, marginLeft: snapToDevice(Math.max(0, (available - width) / 2)) }}>
-          {office.building && office.rooms.length > 1 ? (
-            <BuildingBackdrop theme={theme} tile={tile} depth={office.building.depth} />
-          ) : null}
           {office.rooms.map((room) => (
             <RoomBackdrop key={room.workspaceId} theme={theme} tile={tile} room={room} />
           ))}
+          {office.building ? (
+            <FrameBackdrop theme={theme} tile={tile} rooms={office.rooms} depth={office.building.depth} />
+          ) : null}
           {office.rooms.map((room) => (
             <RoomSign
               key={room.workspaceId}
