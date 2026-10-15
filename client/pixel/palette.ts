@@ -98,8 +98,35 @@ const FIXED_SLOTS = [
   "pod3Shade",
 ] as const;
 
+/**
+ * What a wall's shadow falls on, each with the slot it is drawn in when it does. On a light theme
+ * a shadow is the darker slot beside it; on a dark one those lean light, so it is darkened instead.
+ */
+export const SHADOW_OF = [
+  ["floor", "floorSeam"],
+  ["floorAlt", "floorSeam"],
+  ["floorSeam", "wallShade"],
+  ["carpet", "carpetShade"],
+  ["carpetShade", "wallShade"],
+  ["kitchen", "kitchenAlt"],
+  ["kitchenAlt", "wallShade"],
+  ["wall", "wallShade"],
+  ["wallShade", "wallTrim"],
+  ["wallTrim", "outline"],
+  ["pod0", "pod0Shade"],
+  ["pod1", "pod1Shade"],
+  ["pod2", "pod2Shade"],
+  ["pod3", "pod3Shade"],
+  ["pod0Shade", "wallShade"],
+  ["pod1Shade", "wallShade"],
+  ["pod2Shade", "wallShade"],
+  ["pod3Shade", "wallShade"],
+] as const satisfies ReadonlyArray<readonly [(typeof FIXED_SLOTS)[number], (typeof FIXED_SLOTS)[number]]>;
+type Shadowed = (typeof SHADOW_OF)[number][0];
+
 export type Slot =
   | (typeof FIXED_SLOTS)[number]
+  | `${Shadowed}Shadow`
   | Indexed<"skin" | "skinShade", SkinIndex>
   | Indexed<"hair" | "hairShade", HairIndex>
   | Indexed<"shirt" | "shirtShade", ShirtIndex>
@@ -116,6 +143,7 @@ export const SLOTS = [
   ...numbered("shirt", SHIRT_COUNT),
   ...numbered("shirtShade", SHIRT_COUNT),
   ...numbered("pants", PANTS_COUNT),
+  ...SHADOW_OF.map(([base]) => `${base}Shadow`),
 ] as readonly Slot[];
 
 const SLOT_INDEX = new Map(SLOTS.map((slot, index) => [slot, index]));
@@ -248,6 +276,7 @@ function build(theme: PluginTheme): Palette {
   PANTS.forEach((hex, index) => {
     colors[`pants${index}`] = parseColor(hex);
   });
+  for (const [base, light] of SHADOW_OF) colors[`${base}Shadow`] = dark ? darken(colors[base]!, 0.4) : colors[light]!;
 
   const ordered = SLOTS.map((slot) => colors[slot]!);
   const key = hash(ordered.map((color) => color.join(".")).join("|")).toString(36);

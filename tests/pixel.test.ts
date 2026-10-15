@@ -27,7 +27,7 @@ import { ICON_FRAMES, ICON_SIZE, icon, type IconState } from "../client/pixel/ic
 import { ELLIPSIS, FACES, FALLBACK, FONT_HEIGHT, GLYPH_CHARS, ICON, glyph } from "../client/pixel/font";
 import { COMPOSITE_MAX_ENTRIES, composite, mirror, paint, type Bitmap } from "../client/pixel/grid";
 import { Lru } from "../client/pixel/lru";
-import { SLOTS, lookFor, officePalette, paletteColor, slotIndex } from "../client/pixel/palette";
+import { SHADOW_OF, SLOTS, lookFor, officePalette, paletteColor, slotIndex } from "../client/pixel/palette";
 import { adler32, crc32, deflate, encodeIndexedPng, pngDataUri, toBase64, upscale, type Rgba } from "../client/pixel/png";
 import { PROPS, PROP_USES, TILE, archiveLevel, door, prop, tile, wallTop, wallTopAt } from "../client/pixel/props";
 import type { PropId, ScreenState, TileId } from "../client/pixel/props";
@@ -473,6 +473,18 @@ describe("props, tiles and emotes", () => {
       const palette = officePalette(theme);
       for (const floor of ["floor", "floorAlt", "carpet", "kitchen", "pod0", "pod1", "pod2", "pod3"] as const) {
         expect(contrast(paletteColor(palette, "partition"), paletteColor(palette, floor)), floor).toBeGreaterThan(3);
+      }
+    }
+  });
+
+  it("draws a wall's shadow darker than what it falls on, on both themes", () => {
+    for (const theme of [LIGHT, DARK]) {
+      const palette = officePalette(theme);
+      for (const [base, light] of SHADOW_OF) {
+        const shadow = paletteColor(palette, `${base}Shadow`);
+        expect(luminance(shadow), `${base} ${palette.dark}`).toBeLessThan(luminance(paletteColor(palette, base)));
+        // On a light theme, the slot beside it, as it was chosen.
+        if (!palette.dark) expect(shadow).toEqual(paletteColor(palette, light));
       }
     }
   });

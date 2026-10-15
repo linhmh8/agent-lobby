@@ -1,6 +1,6 @@
 import type { Rect, Room } from "./office-model";
 import { blit, drawn, type Bitmap, type Canvas } from "./pixel/grid";
-import { slotIndex, type Slot } from "./pixel/palette";
+import { SHADOW_OF, slotIndex } from "./pixel/palette";
 import { PROPS, TILE, door, prop, tile, type TileId } from "./pixel/props";
 
 /**
@@ -13,29 +13,18 @@ import { PROPS, TILE, door, prop, tile, type TileId } from "./pixel/props";
  * up to the slab, and the half tile beyond an outer wall stays empty. Every
  * edge, between two rooms, a room and the hallway, or the building and
  * outside, runs along tile middles, so one rule draws every run, corner, tee
- * and crossing, and a wall two rooms share is drawn once.
+ * and crossing, and a wall two rooms share is drawn once. Lit from the top
+ * left, a wall casts a short shadow east and, over the hallway, south.
  */
 
 const HALF = TILE / 2;
 /** The row of the wall face a room's top wall carries on with below its slab: plain panel. */
 const PANEL_ROW = 4;
 
-export interface WallStyle {
-  /** Art pixels of slab either side of the tile middle: 2 is a slab 4 wide. */
-  readonly reach: number;
-  /** Art pixels of shadow the slab casts on the floor east of it and, in the hallway, south of it. */
-  readonly shadow: number;
-  /** One colour for the whole slab instead of an outline with a lit and a shaded side. */
-  readonly flat?: Slot;
-}
-
-export const WALL_STYLES = {
-  slab: { reach: 2, shadow: 0 },
-  line: { reach: 1, shadow: 0, flat: "partitionShade" },
-  shadow: { reach: 2, shadow: 2 },
-} as const satisfies Record<string, WallStyle>;
-export type WallStyleId = keyof typeof WALL_STYLES;
-export const WALL_STYLE: WallStyleId = "slab";
+/** Art pixels of slab either side of the tile middle: a wall 4 wide. */
+export const WALL_REACH = 2;
+/** Art pixels of shadow a wall casts on the floor east of it and, in the hallway, south of it. */
+export const WALL_SHADOW = 2;
 
 const inRect = (x: number, y: number, rect: { x: number; y: number; width: number; height: number }) =>
   x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
@@ -64,35 +53,21 @@ export function roomKey(room: Room): string {
  * image the size of the room's tiles. Only what is inside its walls is drawn:
  * the frame draws the walls over it. Rooms of one shape share the image.
  */
-export function roomArt(room: Room, style: WallStyleId = WALL_STYLE): Bitmap {
-  return drawn(`${roomKey(room)}:${style}`, room.width * TILE, room.height * TILE, (out) => drawRoom(room, out, WALL_STYLES[style]));
+export function roomArt(room: Room): Bitmap {
+  return drawn(roomKey(room), room.width * TILE, room.height * TILE, (out) => drawRoom(room, out));
 }
 
-const SHADES: ReadonlyArray<readonly [Slot, Slot]> = [
-  ["floor", "floorSeam"],
-  ["floorAlt", "floorSeam"],
-  ["floorSeam", "wallShade"],
-  ["carpet", "carpetShade"],
-  ["carpetShade", "wallShade"],
-  ["kitchen", "kitchenAlt"],
-  ["kitchenAlt", "wallShade"],
-  ["wall", "wallShade"],
-  ["wallShade", "wallTrim"],
-  ["wallTrim", "outline"],
-  ...[0, 1, 2, 3].map((index) => [`pod${index}`, `pod${index}Shade`] as [Slot, Slot]),
-  ...[0, 1, 2, 3].map((index) => [`pod${index}Shade`, "wallShade"] as [Slot, Slot]),
-];
 let shadeTable: Uint8Array | null = null;
-/** The colour a floor or face pixel takes in a wall's shadow. */
+/** The slot a floor or face pixel takes in a wall's shadow. */
 function shaded(value: number): number {
   if (!shadeTable) {
     shadeTable = new Uint8Array(256).map((_, index) => index);
-    for (const [from, to] of SHADES) shadeTable[slotIndex(from)] = slotIndex(to);
+    for (const [base] of SHADOW_OF) shadeTable[slotIndex(base)] = slotIndex(`${base}Shadow`);
   }
   return shadeTable[value]!;
 }
 
-function drawRoom(room: Room, out: Canvas, style: WallStyle): void {
+function drawRoom(room: Room, out: Canvas): void {
   // Each team of a crew (a lead's people) has a floor of its own; an agent on its own sits on the plain floor.
   const teams = room.pods.filter(isCrew).flatMap((pod) => pod.teams);
   const floorAt = (x: number, y: number): TileId => {
@@ -134,8 +109,8 @@ function drawRoom(room: Room, out: Canvas, style: WallStyle): void {
     }
   }
   // The left wall's shadow, lit from the top left; the right wall's falls in the room next door.
-  for (let py = HALF + style.reach; py < out.height - HALF - style.reach; py += 1) {
-    for (let px = HALF + style.reach; px < HALF + style.reach + style.shadow; px += 1) {
+  for (let py = HALF + WALL_REACH; py < out.height - HALF - WALL_REACH; py += 1) {
+    for (let px = HALF + WALL_REACH; px < HALF + WALL_REACH + WALL_SHADOW; px += 1) {
       out.pixels[py * width + px] = shaded(out.pixels[py * width + px]!);
     }
   }
@@ -156,8 +131,8 @@ function drawRoom(room: Room, out: Canvas, style: WallStyle): void {
 }
 
 /** What the frame depends on: where each room stands and the building's outline. */
-export function frameKey(rooms: readonly Rect[], depth: readonly number[], style: WallStyleId = WALL_STYLE): string {
-  return `frame:${style}:${depth.join(".")}:${rooms.map((room) => `${room.x},${room.y},${room.width}x${room.height}`).join(";")}`;
+export function frameKey(rooms: readonly Rect[], depth: readonly number[]): string {
+  return `frame:${depth.join(".")}:${rooms.map((room) => `${room.x},${room.y},${room.width}x${room.height}`).join(";")}`;
 }
 
 const OUTSIDE = 0;
@@ -168,15 +143,13 @@ const HALLWAY = 1;
  * one image drawn over the rooms. Clear inside every room but for its walls,
  * and clear outside the building. `depth[x]` is how far down column x goes.
  */
-export function frameArt(rooms: readonly Rect[], depth: readonly number[], style: WallStyleId = WALL_STYLE): Bitmap {
+export function frameArt(rooms: readonly Rect[], depth: readonly number[]): Bitmap {
   const columns = depth.length;
   const rows = Math.max(0, ...depth);
-  return drawn(frameKey(rooms, depth, style), columns * TILE, rows * TILE, (out) =>
-    drawFrame(out, rooms, depth, WALL_STYLES[style]),
-  );
+  return drawn(frameKey(rooms, depth), columns * TILE, rows * TILE, (out) => drawFrame(out, rooms, depth));
 }
 
-function drawFrame(out: Canvas, rooms: readonly Rect[], depth: readonly number[], style: WallStyle): void {
+function drawFrame(out: Canvas, rooms: readonly Rect[], depth: readonly number[]): void {
   const columns = depth.length;
   const rows = Math.max(0, ...depth);
   // Areas change only on tile middles: cell (i, j) runs from the middle of tile (i, j) to the middle of
@@ -200,7 +173,7 @@ function drawFrame(out: Canvas, rooms: readonly Rect[], depth: readonly number[]
     const j = Math.floor((y - HALF) / TILE) + 1;
     return i < 0 || j < 0 || i >= cellsWide || j > rows ? OUTSIDE : (cells[j * cellsWide + i] as number);
   };
-  const { reach } = style;
+  const reach = WALL_REACH;
   // On the slab: within `reach` of an edge between two areas. A slab is narrower than a cell, so the
   // corners of the square around a pixel are enough to tell.
   const slab = (x: number, y: number) => {
@@ -211,28 +184,26 @@ function drawFrame(out: Canvas, rooms: readonly Rect[], depth: readonly number[]
     slab(x, y) && !(slab(x, y - 1) && slab(x, y + 1) && slab(x - 1, y) && slab(x + 1, y));
   // In a slab's shadow: just east of it, or just south of it.
   const shadowed = (x: number, y: number) => {
-    for (let k = 1; k <= style.shadow; k += 1) if (slab(x - k, y) || slab(x, y - k)) return true;
+    for (let k = 1; k <= WALL_SHADOW; k += 1) if (slab(x - k, y) || slab(x, y - k)) return true;
     return false;
   };
   const [outline, fill, light, shade] = (["outline", "partition", "partitionLight", "partitionShade"] as const).map(
     slotIndex,
   ) as [number, number, number, number];
-  const flat = style.flat ? slotIndex(style.flat) : null;
   const hallway = tile("floorAlt").pixels;
   const { width, height, pixels } = out;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let value = 0;
       if (slab(x, y)) {
-        if (flat !== null) value = flat;
-        else if (rim(x, y)) value = outline;
+        if (rim(x, y)) value = outline;
         // Lit from the top left.
         else if (rim(x, y - 1) || rim(x - 1, y)) value = light;
         else if (rim(x, y + 1) || rim(x + 1, y)) value = shade;
         else value = fill;
       } else if (area(x, y) === HALLWAY) {
         value = hallway[(y % TILE) * TILE + (x % TILE)]!;
-        if (style.shadow > 0 && shadowed(x, y)) value = shaded(value);
+        if (shadowed(x, y)) value = shaded(value);
       }
       pixels[y * width + x] = value;
     }

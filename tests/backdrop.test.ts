@@ -1,9 +1,9 @@
 import type { PaseoAgent } from "@getpaseo/client";
 import { describe, expect, it } from "vitest";
-import { WALL_STYLE, WALL_STYLES, frameArt, roomArt } from "../client/backdrop";
+import { WALL_REACH, WALL_SHADOW, frameArt, roomArt } from "../client/backdrop";
 import { buildForest, groupByWorkspace } from "../client/model";
 import { layoutOffice, type Office, type Rect } from "../client/office-model";
-import { slotIndex } from "../client/pixel/palette";
+import { SHADOW_OF, slotIndex } from "../client/pixel/palette";
 
 let clock = 0;
 function agent(id: string, workspaceId: string): PaseoAgent {
@@ -42,8 +42,9 @@ function plan(width = 20): Office {
 }
 
 const TILE = 16;
+const shadows = SHADOW_OF.map(([base]) => slotIndex(`${base}Shadow`));
 const MID = TILE / 2;
-const { reach } = WALL_STYLES[WALL_STYLE];
+const reach = WALL_REACH;
 
 describe("roomArt", () => {
   it("draws the floor up to the middle of the walls and nothing past it", () => {
@@ -118,10 +119,12 @@ describe("frameArt", () => {
     expect(art.pixels[y * art.width + x]).toBe(slotIndex("floorAlt"));
   });
 
-  it("keeps every wall pixel the same width at every style", () => {
-    for (const style of Object.keys(WALL_STYLES) as (keyof typeof WALL_STYLES)[]) {
-      const art = frameArt(office.rooms, depth, style);
-      expect([art.width, art.height]).toEqual([depth.length * TILE, Math.max(...depth) * TILE]);
-    }
+  it("casts the shadow of a wall two pixels east of it, onto the room's own floor", () => {
+    const room = office.rooms[1]!;
+    const art = roomArt(room);
+    const y = 4 * TILE + 5;
+    const pixel = (x: number) => art.pixels[y * art.width + x];
+    for (let x = MID + reach; x < MID + reach + WALL_SHADOW; x += 1) expect(String(pixel(x))).toMatch(new RegExp(`^(${shadows.join("|")})$`));
+    expect(shadows).not.toContain(pixel(MID + reach + WALL_SHADOW));
   });
 });
