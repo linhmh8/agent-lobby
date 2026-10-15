@@ -70,3 +70,13 @@ export function remember(key: string, value: string | null): void {
 export function resizeCursor(across: boolean): object | null {
   return ON_WEB ? { cursor: across ? "col-resize" : "row-resize" } : null;
 }
+
+/**
+ * A scroller the browser does not move by itself. A browser keeps what is in view in place when
+ * content above it changes ("scroll anchoring"): when the chat drops its oldest line as a new one
+ * comes, its height stays the same and the browser scrolls up by the line it dropped, hiding the new
+ * one below. Nothing elsewhere.
+ */
+export function noScrollAnchoring(): object | null {
+  return ON_WEB ? { overflowAnchor: "none" } : null;
+}

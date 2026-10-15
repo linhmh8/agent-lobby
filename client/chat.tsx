@@ -17,6 +17,7 @@ import { FOLLOWING, bounded, chatRows, followResize, followScroll, readableText,
 import type { CrewState } from "./model";
 import { IconButton, Muted, font, pressStyle, radius, space } from "./ui";
 import { useChat } from "./use-chat";
+import { noScrollAnchoring } from "./web";
 
 /**
  * Under a list row the chat has no scroller of its own, which a list row cannot hold
@@ -283,6 +284,7 @@ export function AgentChat({
     <View style={[{ minHeight: 0 }, style]}>
       <ScrollView
         ref={scroller}
+        style={noScrollAnchoring() as ViewStyle | null}
         onScroll={onScroll}
         scrollEventThrottle={100}
         onContentSizeChange={onContentSizeChange}
