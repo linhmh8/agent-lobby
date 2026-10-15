@@ -17,7 +17,7 @@ import { FOLLOWING, bounded, chatRows, followResize, followScroll, readableText,
 import type { CrewState } from "./model";
 import { IconButton, Muted, font, pressStyle, radius, space } from "./ui";
 import { useChat } from "./use-chat";
-import { noScrollAnchoring } from "./web";
+import { anchorScroll } from "./web";
 
 /**
  * Under a list row the chat has no scroller of its own, which a list row cannot hold
@@ -221,19 +221,25 @@ export function AgentChat({
   const scroller = useRef<NativeScrollView>(null);
   // Following the end, until scrolled away from it; see `followScroll`.
   const follow = useRef(FOLLOWING);
+  // The browser's scroll anchoring is off while following and on while reading; see `anchorScroll`.
+  const setFollow = useCallback((next: typeof FOLLOWING) => {
+    if (next.following !== follow.current.following) anchorScroll(scroller.current, !next.following);
+    follow.current = next;
+  }, []);
   // Another agent's chat starts at its end.
   useLayoutEffect(() => {
     follow.current = { ...FOLLOWING, viewport: follow.current.viewport };
+    anchorScroll(scroller.current, false);
   }, [agentId]);
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    follow.current = followScroll(follow.current, contentOffset.y, contentSize.height, layoutMeasurement.height);
-  }, []);
+    setFollow(followScroll(follow.current, contentOffset.y, contentSize.height, layoutMeasurement.height));
+  }, [setFollow]);
   const resized = useCallback((size: { content?: number; viewport?: number }) => {
     const next = followResize(follow.current, size);
-    follow.current = next.follow;
+    setFollow(next.follow);
     if (next.toEnd) scroller.current?.scrollToEnd({ animated: false });
-  }, []);
+  }, [setFollow]);
   const onContentSizeChange = useCallback((_: number, height: number) => resized({ content: height }), [resized]);
   const onLayout = useCallback((event: LayoutChangeEvent) => resized({ viewport: event.nativeEvent.layout.height }), [resized]);
   const { colors } = theme;
@@ -284,7 +290,6 @@ export function AgentChat({
     <View style={[{ minHeight: 0 }, style]}>
       <ScrollView
         ref={scroller}
-        style={noScrollAnchoring() as ViewStyle | null}
         onScroll={onScroll}
         scrollEventThrottle={100}
         onContentSizeChange={onContentSizeChange}

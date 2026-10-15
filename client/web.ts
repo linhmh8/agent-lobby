@@ -71,12 +71,21 @@ export function resizeCursor(across: boolean): object | null {
   return ON_WEB ? { cursor: across ? "col-resize" : "row-resize" } : null;
 }
 
+/** What `anchorScroll` needs of a ScrollView: the node that scrolls. */
+interface Scrollable {
+  getScrollableNode(): unknown;
+}
+
 /**
- * A scroller the browser does not move by itself. A browser keeps what is in view in place when
- * content above it changes ("scroll anchoring"): when the chat drops its oldest line as a new one
- * comes, its height stays the same and the browser scrolls up by the line it dropped, hiding the new
- * one below. Nothing elsewhere.
+ * Turns the browser's scroll anchoring on or off for a ScrollView, written straight onto its node:
+ * nothing is rendered again. Anchoring keeps what is in view in place when content above it
+ * changes. While a chat follows its end that is wrong: when its oldest line goes as a new one
+ * comes, the height stays the same and the browser scrolls up by the line it dropped, hiding the new
+ * one. Once scrolled up to read, it is right: without it the line being read moves.
  */
-export function noScrollAnchoring(): object | null {
-  return ON_WEB ? { overflowAnchor: "none" } : null;
+export function anchorScroll(scroller: unknown, anchored: boolean): void {
+  if (!ON_WEB || scroller === null || typeof scroller !== "object" || !("getScrollableNode" in scroller)) return;
+  const node = (scroller as Scrollable).getScrollableNode();
+  if (node === null || typeof node !== "object" || !("style" in node)) return;
+  (node as { style: { overflowAnchor: string } }).style.overflowAnchor = anchored ? "" : "none";
 }
