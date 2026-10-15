@@ -2,6 +2,7 @@ import type { PaseoAgent } from "@getpaseo/client";
 import { describe, expect, it } from "vitest";
 import { buildForest, groupByWorkspace } from "../client/model";
 import { layoutOffice } from "../client/office-model";
+import { SIDE_DOCK_MIN_WIDTH } from "../client/dock-model";
 import {
   MARKER_TRAVEL_MS,
   MIN_TOUCH,
@@ -123,6 +124,10 @@ describe("autoScale", () => {
 });
 
 describe("officeScale", () => {
+  it("grows from the width the dock moves beside the office, so under it the size never follows the dock", () => {
+    expect(GROW_FROM_WIDTH).toBe(SIDE_DOCK_MIN_WIDTH);
+  });
+
   it("is sceneScale in a side pane, whatever the office", () => {
     for (const [width, ratio] of [[313, 5 / 3], [320, 2], [150, 3], [0, 2]] as const) {
       expect(officeScale(width, width, ratio)).toEqual(sceneScale(width, ratio));

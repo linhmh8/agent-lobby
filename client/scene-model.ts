@@ -2,6 +2,7 @@ import type { PaseoAgent } from "./paseo-types";
 import type { Exchange } from "./exchanges";
 import { STATE_LABEL, displayTitle, matches, roleOf, type CrewNode, type CrewState } from "./model";
 import type { Act, Office, Point, Presence } from "./office-model";
+import { SIDE_DOCK_MIN_WIDTH } from "./dock-model";
 import { crispScale } from "./pixel/scale";
 
 /**
@@ -52,8 +53,13 @@ export function sceneScale(widthPx: number, pixelRatio = 2): SceneScale {
 
 /** The largest size the office grows to on its own, in a wide pane. */
 export const MAX_SCENE_SCALE = 2;
-/** From this pane width up the office is drawn larger, in step with the pane. Narrower panes keep the side-pane size. */
-export const GROW_FROM_WIDTH = 720;
+/**
+ * From this pane width up the office is drawn larger, in step with the pane. Narrower panes keep the
+ * side-pane size, which depends on the scene's width; it is the width from which the details dock
+ * beside the office, so that under it the scene is always as wide as the pane and the size does not
+ * change with the dock.
+ */
+export const GROW_FROM_WIDTH = SIDE_DOCK_MIN_WIDTH;
 /** The largest size the office can be zoomed to by hand. */
 export const MAX_ZOOM = 3;
 

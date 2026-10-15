@@ -74,9 +74,10 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
   const scope = inPanel && !allWorkspaces ? homeScope : null;
   const paseo = usePaseo();
   const [size, setSize] = useState({ view: 0, height: 0, scene: 0, column: 0 });
-  // Sizes picked by hand are kept on this device: the office's zoom for a panel and for the surface
-  // apart, since one is narrow and the other wide, and the dock's width beside it and height under it.
-  const zoomKey = inPanel ? "zoom.panel" : "zoom.surface";
+  // Sizes picked by hand are kept on this device, for a panel and for the surface apart, since one is
+  // narrow and the other wide: the office's zoom, and the dock's width beside it and height under it.
+  const place = inPanel ? "panel" : "surface";
+  const zoomKey = `zoom.${place}`;
   const [zoom, setZoomState] = useState(() => readSize(recall(zoomKey)));
   const setZoom = useCallback(
     (next: number | null) => {
@@ -86,8 +87,8 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
     [zoomKey],
   );
   const [dockWanted, setDockWanted] = useState(() => ({
-    side: readSize(recall("dock.width")),
-    bottom: readSize(recall("dock.height")),
+    side: readSize(recall(`dock.width.${place}`)),
+    bottom: readSize(recall(`dock.height.${place}`)),
   }));
   // The host keeps a pane mounted behind another tab; then nothing here runs.
   const shown = useShown(paneShown(size.view, size.height));
@@ -290,8 +291,8 @@ export function CrewView({ scope: homeScope, theme, host, layout, navigation }: 
   );
   // Kept once the drag ends, as the size it came to rest at.
   const keepDock = useCallback(
-    (next: number) => remember(sideDock ? "dock.width" : "dock.height", String(sideDock ? sideDockWidth(size.view, next) : bottomDockHeight(size.column, next))),
-    [sideDock, size.view, size.column],
+    (next: number) => remember(`${sideDock ? "dock.width" : "dock.height"}.${place}`, String(sideDock ? sideDockWidth(size.view, next) : bottomDockHeight(size.column, next))),
+    [sideDock, place, size.view, size.column],
   );
   // A workspace pane fills its dock; the global list is reading-width, like Paseo's list pages.
   const column = !inPanel ? { width: "100%" as const, maxWidth: 720, alignSelf: "center" as const } : null;
