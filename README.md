@@ -65,7 +65,9 @@ Dark versions: [surface](docs/lobby-surface-dark.png), [list](docs/lobby-list-da
   what you typed, what it wrote (appearing as it streams), one line for a run of tool calls, and a
   line pointing to the full chat for anything this view does not draw. Above it are pending
   permissions with Allow, Deny and Review, and icons for details (workspace, directory, labels,
-  last error), Open, Message and Archive. Archive confirms first.
+  last error), Open, Message and Archive. Archive confirms first. The chat follows what is written
+  next while you are at its end, and stays where you scrolled to otherwise. Drag the dock's edge to
+  make it wider beside the office or taller under it; the size is kept on the device like the zoom.
 - **List.** The toggle beside Office shows the same agents as rows ordered by state then age, each
   with a small animated state icon and the same detail underneath.
 - **Roles.** An optional `ghostline/role` label on an agent changes its character's outline:
@@ -82,9 +84,15 @@ character is about 19 by 29 pixels on a 1.67x display, and a four-desk room with
 lounge fits a 313-pixel Explorer pane as a strip about 115 pixels tall. Bubbles and the cabinet's
 count are drawn at the same scale, in a 3 by 5 pixel face.
 
-A wider pane, such as the Lobby as a workspace tab or the Lobby surface, draws the office larger:
-at the largest crisp size up to 2 at which the whole office still fits across. That is 2.0 on 1x,
-2x and 3x displays and 1.8 on a 1.67x one; an office already as wide as the pane stays as above.
+A pane 720 pixels wide or more, such as the Lobby as a workspace tab or the Lobby surface, draws
+the office larger in step with its width: 1.2 times the width over 720, at the crisp size at or
+below that, up to 2. On a 2x display a 900-pixel pane draws it at 1.5 and a 1200-pixel one at 2.
+The size depends on the pane alone, so the office keeps it as rooms come and go.
+
+The magnifier buttons beside the search draw it smaller or larger by hand, one device pixel per art
+pixel at a time, up to 3 and no larger than a room still fits across; Auto goes back to the size
+above. The size picked is kept on the device, one for the Explorer tab and one for the surface:
+across visits on the web, until the app closes on a phone.
 
 ## What it costs
 

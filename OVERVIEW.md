@@ -16,7 +16,7 @@ An optional `ghostline/role` label on an agent changes its character's outline (
 
 ## Size and cost
 
-The office is drawn small on purpose, at the crisp size nearest 1.2 screen pixels per art pixel. A four-desk room with its pantry and lounge fits a 313 pixel Explorer pane as a strip about 115 pixels tall. A hidden pane holds no timers, subscriptions or requests. With about thirty looping animations on screen the office costs roughly one to four points of one CPU core on an Apple M4; the List view with animated icons costs about the same as no animation. Reduced motion stops every animation and shows first frames.
+The office is drawn small on purpose, at the crisp size nearest 1.2 screen pixels per art pixel. A four-desk room with its pantry and lounge fits a 313 pixel Explorer pane as a strip about 115 pixels tall. A pane 720 pixels wide or more draws it larger in step with its width, up to 2. Magnifier buttons beside the search zoom it by hand, and the dock under or beside the office drags to another size; both are kept on the device. A hidden pane holds no timers, subscriptions or requests. With about thirty looping animations on screen the office costs roughly one to four points of one CPU core on an Apple M4; the List view with animated icons costs about the same as no animation. Reduced motion stops every animation and shows first frames.
 
 ## Data and limits
 
