@@ -411,3 +411,39 @@ export function chatActions(previous: ChatWant, next: ChatWant, held: boolean): 
   if (!live && held) return { ...none, release: true, refetch: true };
   return none;
 }
+
+/** How near the end, in pixels, still counts as at the end. */
+export const STICK_SLOP = 24;
+
+/**
+ * Whether the chat follows its end, and the sizes its scroller last reported:
+ * the content's height from a content size change, the viewport's from a layout.
+ */
+export interface Follow {
+  following: boolean;
+  content: number;
+  viewport: number;
+}
+
+export const FOLLOWING: Follow = { following: true, content: 0, viewport: 0 };
+
+/**
+ * A scroll event. On the web its sizes are read when it is handled, which can
+ * be after the content has grown and before the scroller has said so; read
+ * against the new height, an offset that was at the end looks as if it had
+ * been scrolled up, and the chat would stop following. So the offset is
+ * measured against the shorter of the content heights and the taller of the
+ * viewports, the one reported and the one read: at the end of either is at
+ * the end. Scrolling up by more than `STICK_SLOP` is away from both.
+ */
+export function followScroll(follow: Follow, offset: number, content: number, viewport: number): Follow {
+  const height = follow.content > 0 ? Math.min(follow.content, content) : content;
+  const seen = Math.max(follow.viewport, viewport);
+  const following = offset + seen >= height - STICK_SLOP;
+  return following === follow.following ? follow : { ...follow, following };
+}
+
+/** The content or the viewport has a new height: keep it, and scroll to the end if following. */
+export function followResize(follow: Follow, size: { content?: number; viewport?: number }): { follow: Follow; toEnd: boolean } {
+  return { follow: { ...follow, ...size }, toEnd: follow.following };
+}

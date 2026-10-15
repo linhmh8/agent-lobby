@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  FOLLOWING,
+  STICK_SLOP,
+  followResize,
+  followScroll,
   CHAT_MAX_ITEMS,
   CHAT_ROWS,
   CHAT_TEXT_MAX,
@@ -304,5 +308,43 @@ describe("readableText", () => {
     expect(readableText("See [the docs](https://example.com) and ![](a.png)")).toBe("See [the docs](https://example.com) and [image]");
     // Half of one, as a stream chunk can end, stays as it is until the rest arrives.
     expect(readableText("![Image](file:///tmp/x/sh")).toBe("![Image](file:///tmp/x/sh");
+  });
+});
+
+describe("following the end of the chat", () => {
+  // A scroller 200 tall over content 1000 tall, at its end.
+  const atEnd = followResize(followResize(FOLLOWING, { viewport: 200 }).follow, { content: 1000 }).follow;
+
+  it("scrolls to the end on a new size while following, and not after scrolling up", () => {
+    expect(followResize(atEnd, { content: 1060 }).toEnd).toBe(true);
+    const up = followScroll(atEnd, 500, 1000, 200);
+    expect(up.following).toBe(false);
+    expect(followResize(up, { content: 1060 }).toEnd).toBe(false);
+    // Back at the end, it follows again; near enough counts.
+    expect(followScroll(up, 800, 1000, 200).following).toBe(true);
+    expect(followScroll(up, 800 - STICK_SLOP, 1000, 200).following).toBe(true);
+    expect(followScroll(up, 800 - STICK_SLOP - 1, 1000, 200).following).toBe(false);
+  });
+
+  it("keeps following when a scroll event reads content that has grown before the scroller said so", () => {
+    // At the end of 1000; the content is 1060 by the time the event is read, not yet reported.
+    const late = followScroll(atEnd, 800, 1060, 200);
+    expect(late.following).toBe(true);
+    expect(followResize(late, { content: 1060 }).toEnd).toBe(true);
+  });
+
+  it("keeps following when the viewport shrank before the scroller said so, as when the dock is dragged", () => {
+    expect(followScroll(atEnd, 800, 1000, 120).following).toBe(true);
+    expect(followResize(atEnd, { viewport: 120 }).toEnd).toBe(true);
+  });
+
+  it("keeps following when the content shrank and the offset came down with it", () => {
+    // Older lines dropped: 1000 became 900 and the browser moved the offset to its new end.
+    expect(followScroll(atEnd, 700, 900, 200).following).toBe(true);
+  });
+
+  it("reads a first event on its own sizes, before anything was reported", () => {
+    expect(followScroll(FOLLOWING, 0, 1000, 200).following).toBe(false);
+    expect(followScroll(FOLLOWING, 800, 1000, 200).following).toBe(true);
   });
 });

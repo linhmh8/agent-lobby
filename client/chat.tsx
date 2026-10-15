@@ -1,24 +1,23 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, ScrollView, useRevealedText } from "@getpaseo/plugin/client/react-native";
 import type { PaseoApi } from "./paseo-types";
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import {
   Pressable,
   Text,
   View,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollView as NativeScrollView,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { bounded, chatRows, readableText, type ChatItem, type ChatRow } from "./chat-model";
+import { FOLLOWING, bounded, chatRows, followResize, followScroll, readableText, type ChatItem, type ChatRow } from "./chat-model";
 import type { CrewState } from "./model";
 import { IconButton, Muted, font, pressStyle, radius, space } from "./ui";
 import { useChat } from "./use-chat";
 
-/** Within this many points of the end, the chat follows what is written next. */
-const STICK_SLOP = 24;
 /**
  * Under a list row the chat has no scroller of its own, which a list row cannot hold
  * reliably on every platform: it draws this many of its last lines, each message cut
@@ -219,17 +218,23 @@ export function AgentChat({
   const rows = compact ? allRows.slice(-COMPACT_ROWS) : allRows;
   const earlier = rows.length > 0 && (chat.state.hasOlder || rows.length < allRows.length);
   const scroller = useRef<NativeScrollView>(null);
-  const atEnd = useRef(true);
+  // Following the end, until scrolled away from it; see `followScroll`.
+  const follow = useRef(FOLLOWING);
+  // Another agent's chat starts at its end.
+  useLayoutEffect(() => {
+    follow.current = { ...FOLLOWING, viewport: follow.current.viewport };
+  }, [agentId]);
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    atEnd.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - STICK_SLOP;
+    follow.current = followScroll(follow.current, contentOffset.y, contentSize.height, layoutMeasurement.height);
   }, []);
-  const onContentSizeChange = useCallback(() => {
-    if (atEnd.current) scroller.current?.scrollToEnd({ animated: false });
+  const resized = useCallback((size: { content?: number; viewport?: number }) => {
+    const next = followResize(follow.current, size);
+    follow.current = next.follow;
+    if (next.toEnd) scroller.current?.scrollToEnd({ animated: false });
   }, []);
-  const onLayout = useCallback(() => {
-    if (atEnd.current) scroller.current?.scrollToEnd({ animated: false });
-  }, []);
+  const onContentSizeChange = useCallback((_: number, height: number) => resized({ content: height }), [resized]);
+  const onLayout = useCallback((event: LayoutChangeEvent) => resized({ viewport: event.nativeEvent.layout.height }), [resized]);
   const { colors } = theme;
   const lastKey = rows[rows.length - 1]?.key;
   const streamingKey =
