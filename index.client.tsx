@@ -12,7 +12,7 @@ export default function contribute(client: PluginClientContext) {
       locations: ["explorer", "workspace"],
       Component: CrewPanel,
     }),
-    client.addSurface("lobby", CrewSurface),
+    client.addScreen({ id: "lobby", title: "Lobby", Component: CrewSurface }),
     addCrewHeaderButtons(client),
     client.addCommandCenterItem({
       id: "open-lobby",
@@ -28,7 +28,7 @@ export default function contribute(client: PluginClientContext) {
       icon: "Users",
       keywords: ["agents", "lobby", "crew", "office", "rooms"],
       context: "global",
-      onSelect: (context) => context.openSurface("lobby"),
+      onSelect: (context) => context.openScreen({ screenId: "lobby" }),
     }),
   ];
   return () => {
