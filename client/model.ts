@@ -34,11 +34,9 @@ export function crewState(agent: PaseoAgent): CrewState {
   return "idle";
 }
 
+/** Paseo stamps the creator on the `paseo.parent-agent-id` label; the snapshot carries no other parent field. */
 export function parentAgentId(agent: PaseoAgent): string | null {
-  const fromLabel = agent.labels[PARENT_LABEL];
-  if (fromLabel) return fromLabel;
-  const first = (agent as { parentAgentId?: string | null }).parentAgentId;
-  return first ?? null;
+  return agent.labels[PARENT_LABEL] || null;
 }
 
 export function roleOf(agent: PaseoAgent): string | null {
