@@ -120,7 +120,9 @@ drops, so when it is restored agents and workspaces are both loaded again; the s
 whenever the pane is shown again. As a last resort agents are refetched every five minutes: that
 is the longest a lost update can go unrepaired while the connection itself looks healthy.
 Workspace names come from `workspaces.list` and refresh on `workspace_update`, and when an agent
-turns up in a workspace not yet known.
+turns up in a workspace not yet known. Those `workspace_update` events only reach a plugin through a
+list subscription of its own, so the plugin keeps one open for as long as it is loaded, shared by
+the header buttons and every view.
 
 Speech and messages come from agent timelines. Each timeline subscription costs the daemon one, so
 the plugin keeps at most eight open per daemon connection, however many Lobby tabs and surfaces

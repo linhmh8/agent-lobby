@@ -20,6 +20,6 @@ The office is drawn small on purpose, at the crisp size nearest 1.2 screen pixel
 
 ## Data and limits
 
-The plugin reads the agent list and a few agent timelines through Paseo's client API, keeping at most eight timeline subscriptions open per daemon connection. It sends nothing on its own; messages, permission responses and archives happen only when you press those buttons. Only the daemon's own record of an agent-to-agent message, with its verified sender, is drawn as an exchange.
+The plugin reads the agent list, the workspace list and a few agent timelines through Paseo's client API, keeping one agent and one workspace list subscription and at most eight timeline subscriptions open per daemon connection. It sends nothing on its own; messages, permission responses and archives happen only when you press those buttons. Only the daemon's own record of an agent-to-agent message, with its verified sender, is drawn as an exchange.
 
 Every sprite, tile and font is original and drawn as code; no third-party assets are bundled. Verified in the Paseo desktop app; the iOS and Android code paths are typechecked but have not been run on a device. Bubble text drops accents, and at this size it is something to lean in for. Requires Paseo 0.11.2 or newer.
