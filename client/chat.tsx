@@ -1,7 +1,8 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon, ScrollView, useRevealedText } from "@getpaseo/plugin/client/react-native";
+import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import * as hostUi from "@getpaseo/plugin/client/react-native";
 import type { PaseoApi } from "./paseo-types";
-import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, type ComponentType } from "react";
 import {
   Pressable,
   Text,
@@ -11,6 +12,7 @@ import {
   type NativeSyntheticEvent,
   type ScrollView as NativeScrollView,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from "react-native";
 import { FOLLOWING, bounded, chatRows, followResize, followScroll, readableText, type ChatItem, type ChatRow } from "./chat-model";
@@ -34,11 +36,28 @@ const TOOL_ICON: Record<string, string> = {
   canceled: "Ban",
 };
 
+type RevealPhase = "streaming" | "complete";
+type StreamedTextComponent = ComponentType<{ text: string; phase: RevealPhase; selectable?: boolean; style?: StyleProp<TextStyle> }>;
+
+/**
+ * Hosts up to 0.12.x export `useRevealedText`; hosts from Paseo #7474 on export a `StreamedText`
+ * component instead and drop the hook. Pick at load, once, so the hook is never called conditionally.
+ */
+const host = hostUi as unknown as {
+  StreamedText?: StreamedTextComponent;
+  useRevealedText?: (text: string, phase: RevealPhase) => string;
+};
+const HostStreamedText = typeof host.StreamedText === "function" ? host.StreamedText : null;
+const useRevealedText = typeof host.useRevealedText === "function" ? host.useRevealedText : (text: string) => text;
+
 /** The text being written appears as it streams; anything finished, or with less motion asked for, is shown whole. */
 function AssistantText({ theme, text, streaming }: { theme: PluginTheme; text: string; streaming: boolean }) {
-  const shown = useRevealedText(text, streaming ? "streaming" : "complete");
+  const phase: RevealPhase = streaming ? "streaming" : "complete";
+  const style: StyleProp<TextStyle> = { color: theme.colors.foreground, fontSize: font.sm, lineHeight: font.sm * 1.5 };
+  if (HostStreamedText) return <HostStreamedText text={text} phase={phase} selectable style={style} />;
+  const shown = useRevealedText(text, phase);
   return (
-    <Text selectable style={{ color: theme.colors.foreground, fontSize: font.sm, lineHeight: font.sm * 1.5 }}>
+    <Text selectable style={style}>
       {shown}
     </Text>
   );
