@@ -66,6 +66,28 @@ export function foldText(text: string): string {
   return out.trimEnd();
 }
 
+/** Characters of the scripts the system font draws when the bitmap font cannot: CJK and its forms. */
+const SYSTEM_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hangul}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef]/u;
+
+/**
+ * Whether `text` has words the font cannot draw that the system font should: Chinese, Japanese or
+ * Korean letters, or their full-width forms. Text whose only unknown characters are emoji, or
+ * scripts outside CJK, stays in the bitmap font, where a run of them is one fallback mark.
+ */
+export function needsSystemText(text: string): boolean {
+  for (const char of text) {
+    if (isCombiningMark(char) || isSpace(char)) continue;
+    if (foldChar(char) === null && SYSTEM_SCRIPT.test(char)) return true;
+  }
+  return false;
+}
+
+/** `text` with whitespace runs made one space and the ends trimmed, as `foldText` does. */
+export function collapseSpace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 function measure(folded: string, face: Face): number {
   let width = 0;
   for (const char of folded) width += glyph(char, face).width + LETTER_GAP;

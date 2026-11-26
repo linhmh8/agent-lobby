@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { memo, useMemo } from "react";
-import { View } from "react-native";
+import { Text, View, type LayoutChangeEvent } from "react-native";
 import type { CrewState } from "./model";
 import { Strip } from "./motion";
 import { loopOf, type Cycle } from "./motion-model";
@@ -10,6 +10,14 @@ import {
   BUBBLE_MAX_WIDTH,
   archiveLevel,
   bubbleSize as artBubbleSize,
+  bubbleFrame,
+  bubbleFrameSize,
+  bubbleSystemType,
+  bubbleTextArea,
+  collapseSpace,
+  measuredText,
+  needsSystemText,
+  paletteColor,
   tag,
   Sprite,
   anchored,
@@ -361,6 +369,154 @@ export const BubbleSprite = memo(function BubbleSprite({
   const scale = artScale(tile);
   const bitmap = bubble({ ...art, maxWidth: bubbleMaxWidth(tile, availablePx), tailX: Math.round(tail / scale) });
   return <Sprite sprite={bitmap} palette={officePalette(theme)} scale={scale} />;
+});
+
+/**
+ * Bubbles whose words the bitmap font cannot draw, such as Chinese, Japanese
+ * or Korean, are a frame drawn as art with the words laid over it in the
+ * system font. The words are measured first, unseen, and the frame is drawn
+ * around what they took.
+ */
+
+/** The words to lay over a bubble in the system font, or null when the bitmap font draws them. */
+export function bubbleSystemWords(text: string): string | null {
+  return needsSystemText(text) ? collapseSpace(text) : null;
+}
+
+/** Measured words of a system-text bubble, in layout pixels, and what they were measured for. */
+export interface BubbleMeasure {
+  key: string;
+  width: number;
+  height: number;
+}
+
+/** What a measurement of `text` in this bubble depends on: when any of it changes, measure again. */
+export function bubbleMeasureKey(art: BubbleArt, text: string, tile: number, availablePx: number): string {
+  return `${art.tone}:${art.status ?? ""}:${tile}:${bubbleMaxWidth(tile, availablePx)}:${text}`;
+}
+
+interface SystemLayout {
+  scale: number;
+  left: number;
+  top: number;
+  maxWidth: number;
+  maxLines: number;
+  fontSize: number;
+  lineHeight: number;
+  ink: ReturnType<typeof bubbleTextArea>["ink"];
+}
+
+function systemLayout(art: BubbleArt, tile: number, availablePx: number): SystemLayout {
+  const scale = artScale(tile);
+  const area = bubbleTextArea({ ...art, maxWidth: bubbleMaxWidth(tile, availablePx) });
+  return {
+    scale,
+    left: area.left * scale,
+    top: area.top * scale,
+    maxWidth: area.maxWidth * scale,
+    maxLines: area.maxLines,
+    ink: area.ink,
+    ...bubbleSystemType(scale),
+  };
+}
+
+/** A system-text bubble's size in layout pixels, for words measured at `measure`. */
+export function systemBubbleSize(
+  art: BubbleArt,
+  tile: number,
+  availablePx: number,
+  measure: { width: number; height: number },
+): { width: number; height: number } {
+  const scale = artScale(tile);
+  const size = bubbleFrameSize({ ...art, maxWidth: bubbleMaxWidth(tile, availablePx) }, measuredText(measure, scale));
+  return { width: size.width * scale, height: size.height * scale };
+}
+
+/**
+ * Lays `text` out unseen as a system-text bubble would, and reports the size
+ * it took, at most the bubble's lines and width.
+ */
+export function BubbleTextMeasure({
+  tile,
+  art,
+  text,
+  availablePx,
+  onMeasure,
+}: {
+  tile: number;
+  art: BubbleArt;
+  text: string;
+  availablePx: number;
+  onMeasure: (measure: BubbleMeasure) => void;
+}) {
+  const layout = systemLayout(art, tile, availablePx);
+  const key = bubbleMeasureKey(art, text, tile, availablePx);
+  const report = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    onMeasure({ key, width, height });
+  };
+  return (
+    <View
+      accessible={false}
+      pointerEvents="none"
+      style={{ position: "absolute", left: 0, top: 0, width: layout.maxWidth, opacity: 0, alignItems: "flex-start" }}
+    >
+      <Text
+        key={key}
+        onLayout={report}
+        numberOfLines={layout.maxLines}
+        ellipsizeMode="tail"
+        allowFontScaling={false}
+        style={{ fontSize: layout.fontSize, lineHeight: layout.lineHeight, includeFontPadding: false }}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * A speech bubble whose words are in the system font: the frame as art, the
+ * words over it in the colour the bitmap font would have used.
+ */
+export const SystemBubbleSprite = memo(function SystemBubbleSprite({
+  theme,
+  tile,
+  art,
+  text,
+  availablePx,
+  tail,
+  measure,
+}: SpriteProps & { art: BubbleArt; text: string; availablePx: number; tail: number; measure: { width: number; height: number } }) {
+  const layout = systemLayout(art, tile, availablePx);
+  const { scale } = layout;
+  const palette = officePalette(theme);
+  const words = measuredText(measure, scale);
+  const bitmap = bubbleFrame({ ...art, maxWidth: bubbleMaxWidth(tile, availablePx), tailX: Math.round(tail / scale) }, words);
+  const [red, green, blue] = paletteColor(palette, layout.ink);
+  return (
+    <View style={{ width: bitmap.width * scale, height: bitmap.height * scale }}>
+      <Sprite sprite={bitmap} palette={palette} scale={scale} />
+      <Text
+        accessible={false}
+        numberOfLines={layout.maxLines}
+        ellipsizeMode="tail"
+        allowFontScaling={false}
+        style={{
+          position: "absolute",
+          left: layout.left,
+          top: layout.top,
+          width: Math.min(layout.maxWidth, words.width * scale),
+          fontSize: layout.fontSize,
+          lineHeight: layout.lineHeight,
+          includeFontPadding: false,
+          color: `rgb(${red}, ${green}, ${blue})`,
+        }}
+      >
+        {text}
+      </Text>
+    </View>
+  );
 });
 
 /**

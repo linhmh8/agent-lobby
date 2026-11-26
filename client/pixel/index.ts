@@ -7,8 +7,23 @@ export { emote, EMOTE_ANCHOR, EMOTE_FRAMES, EMOTE_SIZE, type EmoteId } from "./e
 export { composite, type Bitmap, type Layer, type Point } from "./grid";
 export { Sprite, anchored, deviceBubbleScale, deviceCrispScale, devicePixelScale, deviceSnap, spriteUri, type SpriteProps } from "./sprite";
 export { crispScale, devicePixels, snap } from "./scale";
-export { bubble, bubbleScale, bubbleSize, bubbleWidth, tag, BUBBLE_HEIGHT, BUBBLE_MAX_LINES, BUBBLE_MAX_WIDTH } from "./bubble";
-export type { BubbleSpec, BubbleStatus, BubbleTone } from "./bubble";
-export { fitText, foldText, textWidth, wrapText } from "./text";
+export {
+  bubble,
+  bubbleFrame,
+  bubbleFrameSize,
+  bubbleScale,
+  bubbleSize,
+  bubbleSystemType,
+  bubbleTextArea,
+  bubbleWidth,
+  measuredText,
+  tag,
+  BUBBLE_HEIGHT,
+  BUBBLE_MAX_LINES,
+  BUBBLE_MAX_WIDTH,
+  SYSTEM_TEXT_MIN_SIZE,
+} from "./bubble";
+export type { BubbleFrameSpec, BubbleSpec, BubbleStatus, BubbleText, BubbleTextArea, BubbleTone } from "./bubble";
+export { collapseSpace, fitText, foldText, needsSystemText, textWidth, wrapText } from "./text";
 export { animation, characterAnimation, deskAnimation, emoteAnimation, stateIcon, type Animation } from "./anim";
 export { icon, ICON_SIZE, type IconState } from "./icons";

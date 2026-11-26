@@ -209,6 +209,15 @@ become their base letter (đ → d), whitespace runs become one space, and a run
 `wrapText(text, maxWidth, maxLines, face?)` wraps; these three default to the regular face.
 `bubble` does all of it itself.
 
+CJK text is the exception: `needsSystemText(text)` is true when it has Chinese, Japanese or Korean
+letters, or their full-width forms, that the font cannot fold (emoji alone stay a fallback block).
+Such a bubble is `bubbleFrame(spec, text)`: the border, tail and icon with no words, sized for
+system-font words `text` art pixels big. `bubbleTextArea(spec)` says where the words go and how
+much room they have, `bubbleSystemType(scale)` gives the font size (at least
+`SYSTEM_TEXT_MIN_SIZE`) and line height, and `measuredText(size, scale)` turns a measured layout
+size into art pixels. The scene measures the words with React Native's `Text` and lays them over
+the frame.
+
 ## Caches
 
 Every cache is bounded. Drawings and images dropped from one are made again on the next request.

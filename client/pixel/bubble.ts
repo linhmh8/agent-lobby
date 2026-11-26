@@ -52,10 +52,19 @@ export const BUBBLE_FACE: Face = "small";
 export const BUBBLE_MAX_WIDTH = METRICS[BUBBLE_FACE].maxWidth;
 export const BUBBLE_MAX_LINES = 3;
 
-/** Border, padding, the lines, border, tail. A tool box has no padding above its one line. */
-function heightOf(face: Face, lines: number, tight: boolean): number {
+/** Border, padding, the text, border, tail. A tool box has no padding above its one line. */
+function frameHeight(face: Face, textHeight: number, tight: boolean): number {
   const metrics = METRICS[face];
-  return 1 + (tight ? 0 : metrics.padTop) + (lines - 1) * metrics.linePitch + FACES[face].height + 1 + metrics.tail;
+  return 1 + (tight ? 0 : metrics.padTop) + textHeight + 1 + metrics.tail;
+}
+
+/** Rows that `lines` lines of the face take, from the first line's top to the last line's foot. */
+function linesHeight(face: Face, lines: number): number {
+  return (lines - 1) * METRICS[face].linePitch + FACES[face].height;
+}
+
+function heightOf(face: Face, lines: number, tight: boolean): number {
+  return frameHeight(face, linesHeight(face, lines), tight);
 }
 
 /** The height of a one-line speech bubble in the default face. See `bubbleSize` for the rest. */
@@ -109,7 +118,30 @@ interface Plan {
   readonly tailX: number;
 }
 
-function plan(spec: BubbleSpec): Plan {
+/** A bubble without its words: everything `BubbleSpec` says but the text. */
+export type BubbleFrameSpec = Omit<BubbleSpec, "text">;
+
+/** Where a bubble's words go and how much room they have, in art pixels from its top left. */
+export interface BubbleTextArea {
+  readonly left: number;
+  readonly top: number;
+  /** Widest the words may be. */
+  readonly maxWidth: number;
+  readonly maxLines: number;
+  /** The palette slot the words are drawn in. */
+  readonly ink: Slot;
+}
+
+interface Chrome {
+  readonly face: Face;
+  readonly style: Style;
+  readonly area: BubbleTextArea;
+  readonly iconWidth: number;
+  readonly minWidth: number;
+  readonly maxWidth: number;
+}
+
+function chromeOf(spec: BubbleFrameSpec): Chrome {
   const face = spec.face ?? BUBBLE_FACE;
   const metrics = METRICS[face];
   const style = styleOf(spec.tone, spec.status, face);
@@ -118,15 +150,78 @@ function plan(spec: BubbleSpec): Plan {
   const minWidth = 2 * metrics.tailMargin + 1;
   const maxWidth = Math.max(minWidth, Math.floor(spec.maxWidth ?? metrics.maxWidth));
   const maxLines = spec.tone === "tool" ? 1 : Math.max(1, Math.floor(spec.maxLines ?? BUBBLE_MAX_LINES));
-  const lines = wrapText(spec.text, Math.max(0, maxWidth - chrome), maxLines, face);
-  const widest = Math.max(0, ...lines.map((line) => textWidth(line, face)));
+  const area = {
+    left: 1 + metrics.padX + iconWidth,
+    top: 1 + (style.square ? 0 : metrics.padTop),
+    maxWidth: Math.max(0, maxWidth - chrome),
+    maxLines,
+    ink: style.ink,
+  };
+  return { face, style, area, iconWidth, minWidth, maxWidth };
+}
+
+/** The box around words `widest` wide and `textHeight` tall, tail placed. */
+function shape(spec: BubbleFrameSpec, chrome: Chrome, widest: number, textHeight: number): Omit<Plan, "lines"> {
+  const { face, style, iconWidth, minWidth, maxWidth } = chrome;
+  const metrics = METRICS[face];
   // With no words left, the icon does not need the gap after it.
   const content = widest === 0 && iconWidth > 0 ? iconWidth - metrics.iconGap : iconWidth + widest;
   const width = Math.min(maxWidth, Math.max(minWidth, 2 + 2 * metrics.padX + content));
   const wanted = spec.tailX === undefined ? Math.floor(width / 2) : Math.round(spec.tailX);
   const tailX = Math.min(width - 1 - metrics.tailMargin, Math.max(metrics.tailMargin, wanted));
-  const height = heightOf(face, Math.max(1, lines.length), style.square);
-  return { face, style, lines, width, height, tailX };
+  const height = frameHeight(face, textHeight, style.square);
+  return { face, style, width, height, tailX };
+}
+
+function plan(spec: BubbleSpec): Plan {
+  const chrome = chromeOf(spec);
+  const { face, area } = chrome;
+  const lines = wrapText(spec.text, area.maxWidth, area.maxLines, face);
+  const widest = Math.max(0, ...lines.map((line) => textWidth(line, face)));
+  return { ...shape(spec, chrome, widest, linesHeight(face, Math.max(1, lines.length))), lines };
+}
+
+/** The room a bubble's words have and where they start, for words the font cannot draw. */
+export function bubbleTextArea(spec: BubbleFrameSpec): BubbleTextArea {
+  return chromeOf(spec).area;
+}
+
+/** Words drawn over a bubble by the system font, measured in art pixels. */
+export interface BubbleText {
+  readonly width: number;
+  readonly height: number;
+}
+
+function framePlan(spec: BubbleFrameSpec, text: BubbleText): Plan {
+  const chrome = chromeOf(spec);
+  const widest = Math.min(chrome.area.maxWidth, Math.max(0, Math.ceil(text.width)));
+  const height = Math.max(linesHeight(chrome.face, 1), Math.ceil(text.height));
+  return { ...shape(spec, chrome, widest, height), lines: [] };
+}
+
+/** The smallest type the system font is drawn in over a bubble: CJK stays legible at this size. */
+export const SYSTEM_TEXT_MIN_SIZE = 10;
+
+/**
+ * Font size and line height, in layout pixels, for words the system font draws over a bubble at
+ * `scale` layout pixels per art pixel: close to the face's own line, never under the minimum, and
+ * with room enough between lines that CJK is not clipped.
+ */
+export function bubbleSystemType(scale: number, face: Face = BUBBLE_FACE): { fontSize: number; lineHeight: number } {
+  const fontSize = Math.max(SYSTEM_TEXT_MIN_SIZE, Math.round(FACES[face].height * scale));
+  const lineHeight = Math.max(METRICS[face].linePitch * scale, Math.ceil(fontSize * 1.3));
+  return { fontSize, lineHeight };
+}
+
+/** A measured layout size of system text, in layout pixels, as art pixels at `scale`. */
+export function measuredText(size: { width: number; height: number }, scale: number): BubbleText {
+  return { width: Math.ceil(size.width / scale - 1e-6), height: Math.ceil(size.height / scale - 1e-6) };
+}
+
+/** The size `bubbleFrame(spec, text)` will have, in art pixels, tail included. */
+export function bubbleFrameSize(spec: BubbleFrameSpec, text: BubbleText): { width: number; height: number } {
+  const { width, height } = framePlan(spec, text);
+  return { width, height };
 }
 
 /** How wide `bubble(spec)` will be, in art pixels, without drawing it. */
@@ -203,6 +298,21 @@ const cache = new Lru<Bitmap>(BUBBLE_MAX_CACHED);
 export function bubble(spec: BubbleSpec): Bitmap {
   const planned = plan(spec);
   const key = `b:${planned.face}:${spec.tone}:${spec.status ?? ""}:${planned.width}:${planned.tailX}:${planned.lines.join("\n")}`;
+  let bitmap = cache.get(key);
+  if (!bitmap) {
+    bitmap = { key, anchor: { x: planned.tailX, y: planned.height }, ...draw(planned) };
+    cache.set(key, bitmap);
+  }
+  return bitmap;
+}
+
+/**
+ * A bubble with room for words `text` big but none drawn in, for words the system font draws over
+ * it: the border, tail and icon of `bubble`. Its anchor is the tip of the tail.
+ */
+export function bubbleFrame(spec: BubbleFrameSpec, text: BubbleText): Bitmap {
+  const planned = framePlan(spec, text);
+  const key = `f:${planned.face}:${spec.tone}:${spec.status ?? ""}:${planned.width}:${planned.height}:${planned.tailX}`;
   let bitmap = cache.get(key);
   if (!bitmap) {
     bitmap = { key, anchor: { x: planned.tailX, y: planned.height }, ...draw(planned) };

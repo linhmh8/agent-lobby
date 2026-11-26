@@ -42,6 +42,7 @@ import {
 import {
   ArchiveSprite,
   BubbleSprite,
+  BubbleTextMeasure,
   FrameBackdrop,
   ChairSprite,
   CharacterSprite,
@@ -52,8 +53,13 @@ import {
   RoomBackdrop,
   TYPE_FRAMES,
   WALK_FRAMES,
+  SystemBubbleSprite,
+  bubbleMeasureKey,
   bubbleSize,
+  bubbleSystemWords,
   snapToDevice,
+  systemBubbleSize,
+  type BubbleMeasure,
   type CharacterPose,
 } from "./sprites";
 import { font, stateColor } from "./ui";
@@ -546,7 +552,11 @@ const SpeechBubble = memo(function SpeechBubble({
     [bubble.text, bubble.tone, bubble.status],
   );
   const available = officeWidth - 4;
-  const { width, height } = bubbleSize(art, tile, available);
+  // Words the bitmap font cannot draw are laid over the bubble in the system font, measured first.
+  const words = useMemo(() => bubbleSystemWords(art.text), [art.text]);
+  const [measure, setMeasure] = useState<BubbleMeasure | null>(null);
+  const measured = words !== null && measure !== null && measure.key === bubbleMeasureKey(art, words, tile, available) ? measure : null;
+  const { width, height } = measured ? systemBubbleSize(art, tile, available, measured) : bubbleSize(art, tile, available);
   const follow = useMemo(
     () => bubbleFollow(bubbleTrack(width, height, tile, officeWidth, clearance * tile)),
     [width, height, tile, officeWidth, clearance],
@@ -561,9 +571,25 @@ const SpeechBubble = memo(function SpeechBubble({
       pointerEvents="none"
       style={{ position: "absolute", left: 0, top: 0, width, height, zIndex: ABOVE_ROOM + 1 }}
     >
-      <FadeIn ms={160} still={reduced}>
-        <BubbleSprite theme={theme} tile={tile} art={art} availablePx={available} tail={centre - left} />
-      </FadeIn>
+      {words !== null && !measured ? (
+        <BubbleTextMeasure tile={tile} art={art} text={words} availablePx={available} onMeasure={setMeasure} />
+      ) : (
+        <FadeIn ms={160} still={reduced}>
+          {words !== null && measured ? (
+            <SystemBubbleSprite
+              theme={theme}
+              tile={tile}
+              art={art}
+              text={words}
+              availablePx={available}
+              tail={centre - left}
+              measure={measured}
+            />
+          ) : (
+            <BubbleSprite theme={theme} tile={tile} art={art} availablePx={available} tail={centre - left} />
+          )}
+        </FadeIn>
+      )}
     </Mover>
   );
 });
